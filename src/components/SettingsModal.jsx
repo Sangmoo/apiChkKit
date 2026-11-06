@@ -1,10 +1,25 @@
 import { useState } from 'react'
 import { PUBLIC_PROXIES, request, applyProxy } from '../lib/net.js'
+import { AI_MODELS, testKey, aiErrorMessage } from '../lib/ai.js'
 
-export default function SettingsModal({ settings, onSave, onClose }) {
+export default function SettingsModal({ settings, ai, onSave, onClose }) {
   const [s, setS] = useState(settings)
+  const [a, setA] = useState(ai)
   const [testMsg, setTestMsg] = useState('')
+  const [aiMsg, setAiMsg] = useState('')
+  const [showKey, setShowKey] = useState(false)
   const set = (patch) => setS({ ...s, ...patch })
+  const setAi = (patch) => setA({ ...a, ...patch })
+
+  async function checkKey() {
+    setAiMsg('확인 중…')
+    try {
+      const reply = await testKey(a)
+      setAiMsg(`✅ ${reply}`)
+    } catch (e) {
+      setAiMsg(`❌ ${aiErrorMessage(e)}`)
+    }
+  }
 
   async function testProxy() {
     if (!s.customProxy.trim()) return
@@ -18,13 +33,63 @@ export default function SettingsModal({ settings, onSave, onClose }) {
     <div className="modal-bg" onClick={onClose}>
       <div className="card modal" onClick={(e) => e.stopPropagation()}>
         <div className="card-h">
-          ⚙️ 네트워크 설정
+          ⚙️ 설정
           <span className="spacer" />
           <button className="btn sm ghost" onClick={onClose}>
             ✕
           </button>
         </div>
         <div className="card-b">
+          <div className="section-title">🤖 Claude AI</div>
+          <div className="field">
+            <label>Claude API 키</label>
+            <div className="row">
+              <input
+                className="input grow mono"
+                type={showKey ? 'text' : 'password'}
+                autoComplete="off"
+                placeholder="sk-ant-..."
+                value={a.apiKey}
+                onChange={(e) => setAi({ apiKey: e.target.value })}
+              />
+              <button className="btn" onClick={() => setShowKey(!showKey)} title="키 보기/숨기기">
+                {showKey ? '🙈' : '👁'}
+              </button>
+              <button className="btn" onClick={checkKey} disabled={!a.apiKey.trim()}>
+                키 확인
+              </button>
+            </div>
+            {aiMsg && <div className="hint">{aiMsg}</div>}
+            <label className="row small" style={{ fontWeight: 400, marginTop: 6 }}>
+              <input type="checkbox" checked={a.remember} onChange={(e) => setAi({ remember: e.target.checked })} />
+              이 브라우저에 키 저장 (끄면 탭을 닫을 때 지워짐)
+            </label>
+            <p className="hint">
+              키는 <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">Anthropic Console</a> 에서 발급합니다. 키는 서버로 보내지 않고 이 브라우저에서 api.anthropic.com 으로만 전송됩니다. 공용 PC에서는 저장하지 마세요. 사용 요금은 키 소유자에게 청구됩니다.
+            </p>
+          </div>
+          <div className="row wrap" style={{ gap: 14, marginBottom: 14 }}>
+            <div className="field grow" style={{ marginBottom: 0, minWidth: 220 }}>
+              <label>모델</label>
+              <select className="select" value={a.model} onChange={(e) => setAi({ model: e.target.value })}>
+                {AI_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>분석 깊이 (effort)</label>
+              <select className="select" value={a.effort} onChange={(e) => setAi({ effort: e.target.value })}>
+                <option value="low">low · 빠름</option>
+                <option value="medium">medium · 기본</option>
+                <option value="high">high · 꼼꼼함</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="section-title">🌐 네트워크</div>
           <div className="field">
             <label>호출 방식</label>
             <div className="radio-row">
@@ -90,7 +155,7 @@ export default function SettingsModal({ settings, onSave, onClose }) {
             <button
               className="btn primary"
               onClick={() => {
-                onSave(s)
+                onSave(s, { ...a, apiKey: a.apiKey.trim() })
                 onClose()
               }}
             >

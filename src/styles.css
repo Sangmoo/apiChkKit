@@ -206,3 +206,20 @@ pre.code { background: var(--code-bg); border: 1px solid var(--border); border-r
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 16px; border-radius: 8px; z-index: 60; font-size: 13px; }
 .footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 30px; }
 .hide-sm{} @media (max-width:640px){.hide-sm{display:none}}
+
+/* Claude AI 대화 */
+.modal.wide { width: min(900px, 100%); }
+.chat { display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow-y: auto; }
+.bubble { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.bubble.user { background: var(--accent-soft); align-self: flex-end; max-width: 85%; }
+.bubble.assistant { background: var(--panel); }
+.md { line-height: 1.65; overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md h3, .md h4, .md h5, .md h6 { margin: 14px 0 6px; }
+.md p { margin: 6px 0; }
+.md ul, .md ol { margin: 6px 0; padding-left: 22px; }
+.md code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+.md pre.code code { border: none; padding: 0; }
+.md blockquote { margin: 8px 0; padding: 6px 12px; border-left: 3px solid var(--warn); background: var(--warn-soft); border-radius: 4px; }
+.md hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }

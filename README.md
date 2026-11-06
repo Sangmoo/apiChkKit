@@ -25,7 +25,8 @@ URL을 입력하면 **그 사이트가 어떤 API를 사용하는지** 찾아내
 | **2. 조건값 → 결과값** | 엔드포인트별 query / path / header / body 파라미터(타입·필수 여부·예시·관측값·허용값)와 응답 필드(경로·타입·예시값)를 표로 정리 |
 | **3. 테스트** | 조건값을 바꿔 바로 호출하고 응답을 JSON 트리, 결과 필드, Raw, 헤더로 확인. 받은 응답은 응답 구조에 자동으로 합쳐집니다 |
 | **4. 조건 비교** | 파라미터 하나를 여러 값(자동 제안: 관측값, enum, 경계값, 파라미터 제외)으로 바꿔 호출하고 상태코드, 결과 개수, 응답 구조 변화를 비교 |
-| **5. 내보내기** | Markdown 리포트, OpenAPI 3 스펙, 프로젝트 JSON(저장/불러오기), cURL / fetch / Python 코드 |
+| **5. Claude AI 분석** | Claude API 키를 넣으면 API별로 용도, 조건값·결과값 의미, 테스트 시나리오, 테스트 결과 해석, 호출 코드를 Claude 에게 물어볼 수 있고, 수집한 API 전체 요약도 받을 수 있습니다 |
+| **6. 내보내기** | Markdown 리포트, OpenAPI 3 스펙, 프로젝트 JSON(저장/불러오기), cURL / fetch / Python 코드 |
 
 ### URL 분석이 하는 일
 
@@ -53,6 +54,18 @@ URL을 입력하면 **그 사이트가 어떤 API를 사용하는지** 찾아내
 4. `__ackDone()` 을 실행하면 결과가 클립보드로 복사됩니다. 앱에 붙여넣으면 됩니다
 
 같은 경로의 요청은 `/users/123` → `/users/{userId}` 처럼 묶고, 요청마다 달라진 조건값과 응답 필드를 합칩니다. 모든 요청에 등장한 파라미터는 필수로 표시합니다.
+
+## Claude AI 분석
+
+1. ⚙️ 설정 → **Claude API 키**에 [Anthropic Console](https://console.anthropic.com/settings/keys)에서 발급한 키를 입력하고 **키 확인**을 누릅니다
+2. 모델(기본 Claude Opus 5.5, Sonnet 5.5, Haiku 5.5)과 분석 깊이(effort)를 고릅니다
+3. 엔드포인트 상세의 **🤖 AI 분석** 탭에서 빠른 질문 버튼을 누르거나 자유롭게 질문합니다. 상단의 **🤖 AI 요약**은 수집한 API 전체를 분석합니다
+
+- Claude에는 그 API의 조건값, 관측값, 응답 필드, 테스트 기록, 응답 샘플이 함께 전달됩니다
+- 공식 SDK(`@anthropic-ai/sdk`)로 브라우저에서 api.anthropic.com에 직접 요청하고, 답변은 스트리밍으로 표시됩니다. 키는 다른 서버로 보내지 않습니다
+- 키는 기본적으로 탭의 메모리에만 있습니다. **이 브라우저에 키 저장**을 켜야 localStorage에 저장됩니다
+- Opus/Sonnet은 안전 분류기가 요청을 거절하면 서버 측 fallback(`fallbacks: "default"`)으로 다른 모델이 이어서 답합니다
+- 사용 요금은 키 소유자에게 청구됩니다
 
 ## CORS와 프록시
 
@@ -92,9 +105,11 @@ src/
     InputPanel.jsx           URL / 캡처 / HAR / cURL / 스펙 입력
     EndpointList.jsx         엔드포인트 목록 (검색, 신뢰도 필터)
     EndpointDetail.jsx       조건값→결과값, 테스트, 조건 비교, 기록, 코드, 근거
-    SettingsModal.jsx        네트워크/프록시 설정
+    SettingsModal.jsx        Claude 키·모델, 네트워크/프록시 설정
+    AiChat.jsx / Markdown.jsx  Claude 대화 패널과 답변 렌더링
     common.jsx               JSON 트리, 스키마 테이블 등
   lib/
+    ai.js                    Claude 호출(스트리밍), 분석 데이터 → 프롬프트
     analyzer.js              URL 분석 파이프라인, WordPress, GraphQL introspection
     jsScanner.js             JS/HTML 정적 분석
     openapi.js               OpenAPI 파싱 및 내보내기
@@ -109,7 +124,7 @@ proxy/worker.js              Cloudflare Worker CORS 프록시
 
 ## 주의
 
-허가받은 대상만 분석하고 테스트하세요. 조건 비교는 실제 요청을 여러 번 보냅니다. 다른 사람의 서비스에 부하를 주거나 이용약관을 어기지 않도록 주의하세요. 입력한 데이터와 분석 결과는 브라우저(localStorage)에만 저장됩니다.
+허가받은 대상만 분석하고 테스트하세요. 조건 비교는 실제 요청을 여러 번 보냅니다. 다른 사람의 서비스에 부하를 주거나 이용약관을 어기지 않도록 주의하세요. 입력한 데이터와 분석 결과는 브라우저(localStorage)에만 저장됩니다. AI 분석을 사용하면 해당 분석 데이터가 Anthropic API로 전송됩니다.
 
 ## License
 

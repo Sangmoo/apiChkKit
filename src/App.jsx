@@ -3,6 +3,8 @@ import InputPanel from './components/InputPanel.jsx'
 import EndpointList from './components/EndpointList.jsx'
 import EndpointDetail from './components/EndpointDetail.jsx'
 import SettingsModal from './components/SettingsModal.jsx'
+import AiChat from './components/AiChat.jsx'
+import { DEFAULT_AI, overviewContext, OVERVIEW_PRESETS } from './lib/ai.js'
 import { DEFAULT_SETTINGS } from './lib/net.js'
 import { analyzeUrl, graphqlIntrospect } from './lib/analyzer.js'
 import { mergeEndpoints, observationsToEndpoints } from './lib/endpoint.js'
@@ -39,6 +41,10 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [menu, setMenu] = useState(false)
   const [toastMsg, setToastMsg] = useState('')
+  // Claude 설정: '키 저장'을 켠 경우에만 API 키를 localStorage 에 둔다 (아니면 이 탭의 메모리에만)
+  const [ai, setAi] = useState(() => ({ ...DEFAULT_AI, ...LS.get('ack.ai', {}) }))
+  const [showOverviewAi, setShowOverviewAi] = useState(false)
+  const [overviewChat, setOverviewChat] = useState([])
   const projectFileRef = useRef(null)
 
   useEffect(() => {
@@ -46,6 +52,7 @@ export default function App() {
     LS.set('ack.theme', theme)
   }, [theme])
   useEffect(() => LS.set('ack.settings', settings), [settings])
+  useEffect(() => LS.set('ack.ai', ai.remember ? ai : { ...ai, apiKey: '' }), [ai])
   useEffect(() => {
     // 세션 복원을 위해 가볍게 저장 (샘플 본문 제외)
     const t = setTimeout(() => {
@@ -221,7 +228,10 @@ export default function App() {
             }}
           />
         </div>
-        <button className="btn" onClick={() => setShowSettings(true)} title="네트워크 설정">
+        <button className="btn" onClick={() => setShowOverviewAi(true)} disabled={!endpoints.length} title="수집한 API 전체를 Claude 로 분석">
+          🤖 <span className="hide-sm">AI 요약</span>
+        </button>
+        <button className="btn" onClick={() => setShowSettings(true)} title="네트워크 · Claude 설정">
           ⚙️ <span className="hide-sm">설정</span>
         </button>
         <button className="btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="테마 전환">
@@ -265,7 +275,17 @@ export default function App() {
             }}
           />
           {selected ? (
-            <EndpointDetail key={selected.id} ep={selected} settings={settings} onUpdate={updateEndpoint} onIntrospect={onIntrospect} onRemove={removeEndpoint} toast={toast} />
+            <EndpointDetail
+              key={selected.id}
+              ep={selected}
+              settings={settings}
+              ai={ai}
+              onOpenSettings={() => setShowSettings(true)}
+              onUpdate={updateEndpoint}
+              onIntrospect={onIntrospect}
+              onRemove={removeEndpoint}
+              toast={toast}
+            />
           ) : (
             <div className="card empty">목록에서 엔드포인트를 선택하세요</div>
           )}
@@ -281,7 +301,44 @@ export default function App() {
         </a>
       </div>
 
-      {showSettings && <SettingsModal settings={settings} onSave={setSettings} onClose={() => setShowSettings(false)} />}
+      {showSettings && (
+        <SettingsModal
+          settings={settings}
+          ai={ai}
+          onSave={(s, a) => {
+            setSettings(s)
+            setAi(a)
+          }}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+      {showOverviewAi && (
+        <div className="modal-bg" onClick={() => setShowOverviewAi(false)}>
+          <div className="card modal wide" onClick={(e) => e.stopPropagation()}>
+            <div className="card-h">
+              🤖 수집한 API 전체 분석 <span className="badge">{endpoints.length}개</span>
+              <span className="spacer" />
+              <button className="btn sm ghost" onClick={() => setShowOverviewAi(false)}>
+                ✕
+              </button>
+            </div>
+            <div className="card-b">
+              <AiChat
+                ai={ai}
+                getContext={() => overviewContext(endpoints, target)}
+                presets={OVERVIEW_PRESETS}
+                messages={overviewChat}
+                setMessages={setOverviewChat}
+                onOpenSettings={() => {
+                  setShowOverviewAi(false)
+                  setShowSettings(true)
+                }}
+                toast={toast}
+              />
+            </div>
+          </div>
+        </div>
+      )}
       {toastMsg && <div className="toast">{toastMsg}</div>}
     </div>
   )

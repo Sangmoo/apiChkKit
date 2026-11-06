@@ -3,6 +3,8 @@ import { Method, Badge, Status, Tabs, SchemaTable, JsonView, copyText, sourceLab
 import { buildRequest, initialValues, suggestValues, toCurl, toFetch, toPython } from '../lib/builder.js'
 import { request, shortVia } from '../lib/net.js'
 import { inferSchema, mergeSchema, summarizeBody, schemaSignature, diffSignature, safeJson } from '../lib/schema.js'
+import AiChat from './AiChat.jsx'
+import { endpointContext, ENDPOINT_PRESETS } from '../lib/ai.js'
 
 const LOC_LABEL = { query: 'query', path: 'path', header: 'header', body: 'body', cookie: 'cookie', variable: 'gql 변수' }
 const fmt = (v) => (v === undefined || v === null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v))
@@ -41,7 +43,7 @@ function labelOf(ep, values, customParams) {
   return s.length > 140 ? s.slice(0, 137) + '…' : s || '(조건 없음)'
 }
 
-export default function EndpointDetail({ ep, settings, onUpdate, onIntrospect, onRemove, toast }) {
+export default function EndpointDetail({ ep, settings, ai, onOpenSettings, onUpdate, onIntrospect, onRemove, toast }) {
   const [tab, setTab] = useState('overview')
   const [values, setValues] = useState(() => initialValues(ep))
   const [customParams, setCustomParams] = useState([])
@@ -144,6 +146,7 @@ export default function EndpointDetail({ ep, settings, onUpdate, onIntrospect, o
           { id: 'test', label: '▶ 테스트' },
           { id: 'sweep', label: '조건 비교' },
           { id: 'history', label: '기록', count: ep.runs?.length || 0 },
+          { id: 'ai', label: '🤖 AI 분석', count: ep.aiChat?.length ? Math.ceil(ep.aiChat.length / 2) : null },
           { id: 'code', label: '코드' },
           { id: 'evidence', label: '근거·샘플', count: ep.samples.length + ep.evidence.length },
         ]}
@@ -172,6 +175,17 @@ export default function EndpointDetail({ ep, settings, onUpdate, onIntrospect, o
         )}
         {tab === 'sweep' && <SweepTab ep={ep} values={values} runWith={runWith} />}
         {tab === 'history' && <HistoryTab ep={ep} onClear={() => onUpdate(ep.id, (e) => ({ ...e, runs: [] }))} />}
+        {tab === 'ai' && (
+          <AiChat
+            ai={ai}
+            getContext={() => endpointContext(ep)}
+            presets={ENDPOINT_PRESETS}
+            messages={ep.aiChat || []}
+            setMessages={(m) => onUpdate(ep.id, (e) => ({ ...e, aiChat: m }))}
+            onOpenSettings={onOpenSettings}
+            toast={toast}
+          />
+        )}
         {tab === 'code' && <CodeTab req={preview} toast={toast} />}
         {tab === 'evidence' && <EvidenceTab ep={ep} />}
       </div>
