@@ -5,7 +5,6 @@ colorFrom: indigo
 colorTo: red
 sdk: static
 pinned: false
-app_build_command: npm run build
 app_file: build/index.html
 license: mit
 short_description: URL → API 분석, 조건값별 결과값 확인 키트
@@ -70,7 +69,18 @@ HF Static Space는 서버가 없는 정적 웹앱이라 모든 요청을 브라�
 npm install
 npm run dev      # http://localhost:5173
 npm test         # 파서/스캐너 단위 테스트
-npm run build    # build/ 에 정적 파일 생성 (HF Space가 이 명령으로 빌드)
+npm run build    # build/ 에 정적 파일 생성
+```
+
+### 배포
+
+HF Static Space에서 빌드하려면(`app_build_command`) 크레딧이 필요합니다. 그래서 빌드 결과물 `build/` 를 저장소에 함께 커밋하고, Space는 `build/index.html` 을 바로 서빙합니다.
+
+```bash
+npm run build
+git add -A && git commit -m "build"
+git push origin main   # GitHub
+git push hf main       # Hugging Face Space (remote: https://huggingface.co/spaces/Sangmoo/apiChkKit)
 ```
 
 ## 구조
