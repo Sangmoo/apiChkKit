@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Tabs, copyText } from './common.jsx'
-import { CAPTURE_SCRIPT } from '../lib/captureScript.js'
+import { CAPTURE_SCRIPT, CAPTURE_BOOKMARKLET } from '../lib/captureScript.js'
 
 const EXAMPLES = [
   { label: 'JSONPlaceholder (JSON API)', url: 'https://jsonplaceholder.typicode.com/posts?userId=1' },
@@ -9,13 +9,23 @@ const EXAMPLES = [
   { label: 'Countries GraphQL', url: 'https://countries.trevorblades.com/graphql' },
 ]
 
-export default function InputPanel({ busy, onAnalyzeUrl, onImport, toast }) {
+export default function InputPanel({ busy, onAnalyzeUrl, onImport, toast, tabRequest }) {
   const [tab, setTab] = useState('url')
+  // 부모가 특정 탭을 열도록 요청 (예: URL 분석이 차단되면 캡처 탭으로)
+  useEffect(() => {
+    if (tabRequest?.tab) setTab(tabRequest.tab)
+  }, [tabRequest])
   const [url, setUrl] = useState('')
   const [paste, setPaste] = useState({ capture: '', curl: '', spec: '' })
   const [includeAll, setIncludeAll] = useState(false)
   const fileRef = useRef(null)
   const [dragOver, setDragOver] = useState(false)
+  const bookmarkRef = useRef(null)
+
+  // React 는 javascript: 링크를 막기 때문에 북마클릿 주소는 DOM 에 직접 넣는다
+  useEffect(() => {
+    bookmarkRef.current?.setAttribute('href', CAPTURE_BOOKMARKLET)
+  }, [tab])
 
   const readFile = (file, kind) => {
     const r = new FileReader()
@@ -81,18 +91,38 @@ export default function InputPanel({ busy, onAnalyzeUrl, onImport, toast }) {
 
         {tab === 'capture' && (
           <>
-            <ol className="small" style={{ margin: '0 0 10px', paddingLeft: 18 }}>
-              <li>분석할 사이트를 열고 <b>F12 → Console</b> 탭에서 아래 스크립트를 붙여넣고 실행합니다.</li>
-              <li>검색, 필터, 페이지 이동 등 확인하고 싶은 동작을 해봅니다.</li>
-              <li>
-                콘솔에 <code>__ackDone()</code> 를 입력하면 결과가 클립보드에 복사됩니다 → 아래에 붙여넣기.
-              </li>
-            </ol>
-            <div className="row" style={{ marginBottom: 8 }}>
-              <button className="btn" onClick={() => copyText(CAPTURE_SCRIPT, toast)}>
-                📋 캡처 스크립트 복사
-              </button>
-              <span className="muted small">실제 페이지가 호출한 API의 요청값·응답값을 그대로 수집 (CORS 무관, 가장 정확)</span>
+            <p className="small" style={{ marginTop: 0 }}>
+              URL 분석이 "다른 출처 요청 차단"으로 막히는 사이트(대형 쇼핑몰·포털 등)도 이 방식이면 됩니다. 사이트 화면이 실제로 호출하는 API의 조건값·응답을 <b>내 브라우저에서</b> 그대로 기록합니다.
+            </p>
+            <div className="steps" style={{ marginTop: 0, marginBottom: 10 }}>
+              <div className="step small">
+                <b>방법 A · 북마클릿 (추천)</b>
+                <ol style={{ margin: '4px 0', paddingLeft: 18 }}>
+                  <li>
+                    이 버튼을 북마크바로 끌어다 놓기 →{' '}
+                    <a ref={bookmarkRef} className="btn sm primary" onClick={(e) => e.preventDefault()} title="북마크바로 드래그하세요" style={{ textDecoration: 'none' }}>
+                      📌 API 캡처
+                    </a>
+                  </li>
+                  <li>분석할 사이트에서 북마크 클릭 → 오른쪽 아래에 캡처 패널 표시</li>
+                  <li>검색·정렬·필터·페이지 이동을 해본 뒤 패널의 <b>[결과 복사]</b></li>
+                  <li>아래 칸에 붙여넣기</li>
+                </ol>
+              </div>
+              <div className="step small">
+                <b>방법 B · 콘솔</b>
+                <ol style={{ margin: '4px 0', paddingLeft: 18 }}>
+                  <li>
+                    <button className="btn sm" onClick={() => copyText(CAPTURE_SCRIPT, toast)}>
+                      📋 캡처 스크립트 복사
+                    </button>
+                  </li>
+                  <li>분석할 사이트에서 F12 → Console 에 붙여넣고 Enter</li>
+                  <li>
+                    동작을 해본 뒤 패널의 <b>[결과 복사]</b> (또는 <code>__ackDone()</code>)
+                  </li>
+                </ol>
+              </div>
             </div>
             <textarea
               className="input"

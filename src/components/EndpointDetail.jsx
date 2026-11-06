@@ -4,6 +4,7 @@ import { buildRequest, initialValues, suggestValues, toCurl, toFetch, toPython }
 import { request, shortVia } from '../lib/net.js'
 import { inferSchema, mergeSchema, summarizeBody, schemaSignature, diffSignature, safeJson } from '../lib/schema.js'
 import AiChat from './AiChat.jsx'
+import SiteRunModal from './SiteRunModal.jsx'
 import { endpointContext, ENDPOINT_PRESETS } from '../lib/ai.js'
 
 const LOC_LABEL = { query: 'query', path: 'path', header: 'header', body: 'body', cookie: 'cookie', variable: 'gql 변수' }
@@ -11,7 +12,8 @@ const fmt = (v) => (v === undefined || v === null ? '' : typeof v === 'object' ?
 
 export function applyRun(ep, run) {
   const next = { ...ep, runs: [...(ep.runs || []), stripRun(run)].slice(-50) }
-  if (run.status && run.json !== undefined) {
+  // 공개 프록시가 낸 오류 응답은 이 API 의 응답 구조로 취급하지 않는다
+  if (run.status && run.json !== undefined && !run.proxyError) {
     const st = String(run.status)
     const cur = next.responses[st]
     next.responses = { ...next.responses, [st]: { description: cur?.description || '', schema: mergeSchema(cur?.schema, inferSchema(run.json)) } }
@@ -66,13 +68,13 @@ export default function EndpointDetail({ ep, settings, ai, onOpenSettings, onUpd
   const extra = { customParams, headers, bodyText, bodyMode }
   const preview = useMemo(() => buildRequest(ep, values, extra), [ep, values, customParams, headers, bodyText, bodyMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function runWith(vals, label) {
-    const req = buildRequest(ep, vals, extra)
-    const res = await request(req, settings)
+  const [siteRun, setSiteRun] = useState(null) // { requests, onDone }
+
+  function makeRun(req, label, res) {
     const run = {
       id: Math.random().toString(36).slice(2),
       at: Date.now(),
-      label: label ?? labelOf(ep, vals, customParams),
+      label,
       req,
       status: res.status,
       time: res.time,
@@ -84,11 +86,50 @@ export default function EndpointDetail({ ep, settings, ai, onOpenSettings, onUpd
       json: res.json,
       error: res.error,
       attempts: res.attempts,
-      summary: res.status ? summarizeBody(res.json, res.text) : res.error,
-      signature: res.json !== undefined ? schemaSignature(inferSchema(res.json)) : [],
+      proxyError: res.proxyError,
+      summary: res.proxyError ? res.error : res.status ? summarizeBody(res.json, res.text) : res.error,
+      signature: res.json !== undefined && !res.proxyError ? schemaSignature(inferSchema(res.json)) : [],
     }
     onUpdate(ep.id, (e) => applyRun(e, run))
     return run
+  }
+
+  async function runWith(vals, label) {
+    const req = buildRequest(ep, vals, extra)
+    const res = await request(req, settings)
+    return makeRun(req, label ?? labelOf(ep, vals, customParams), res)
+  }
+
+  /** 조건값 목록을 대상 사이트 탭에서 실행하도록 준비 (cases: [{vals, label}]) */
+  function openSiteRun(cases, onDone) {
+    const requests = cases.map((c, i) => ({ id: `r${i}`, label: c.label ?? labelOf(ep, c.vals, customParams), ...buildRequest(ep, c.vals, extra) }))
+    setSiteRun({ requests, onDone })
+  }
+
+  function applySiteResults(results) {
+    const { requests, onDone } = siteRun
+    const runs = []
+    for (const r of results) {
+      const req = requests.find((x) => x.id === r.id)
+      if (!req) continue
+      const text = r.text || ''
+      const res = {
+        status: r.status,
+        time: r.time || 0,
+        size: new Blob([text]).size,
+        via: 'site',
+        headers: r.headers || {},
+        contentType: r.contentType || '',
+        text,
+        json: safeJson(text),
+        error: r.error,
+        attempts: ['대상 사이트 탭에서 실행'],
+      }
+      const { id, label, ...httpReq } = req
+      runs.push(makeRun(httpReq, label, res))
+    }
+    onDone?.(runs)
+    toast?.(`${runs.length}건의 결과를 반영했습니다`)
   }
 
   async function send() {
@@ -170,10 +211,11 @@ export default function EndpointDetail({ ep, settings, ai, onOpenSettings, onUpd
             busy={busy}
             send={send}
             current={current}
+            onSiteRun={() => openSiteRun([{ vals: values }], (runs) => runs[0] && setCurrent(runs[0]))}
             toast={toast}
           />
         )}
-        {tab === 'sweep' && <SweepTab ep={ep} values={values} runWith={runWith} />}
+        {tab === 'sweep' && <SweepTab ep={ep} values={values} runWith={runWith} openSiteRun={openSiteRun} />}
         {tab === 'history' && <HistoryTab ep={ep} onClear={() => onUpdate(ep.id, (e) => ({ ...e, runs: [] }))} />}
         {tab === 'ai' && (
           <AiChat
@@ -189,6 +231,7 @@ export default function EndpointDetail({ ep, settings, ai, onOpenSettings, onUpd
         {tab === 'code' && <CodeTab req={preview} toast={toast} />}
         {tab === 'evidence' && <EvidenceTab ep={ep} />}
       </div>
+      {siteRun && <SiteRunModal requests={siteRun.requests} onApply={applySiteResults} onClose={() => setSiteRun(null)} toast={toast} />}
     </div>
   )
 }
@@ -346,7 +389,7 @@ function RunTable({ runs, baseline, onView }) {
 }
 
 function TestTab(props) {
-  const { ep, values, setValues, customParams, setCustomParams, headers, setHeaders, bodyMode, setBodyMode, bodyText, setBodyText, preview, busy, send, current } = props
+  const { ep, values, setValues, customParams, setCustomParams, headers, setHeaders, bodyMode, setBodyMode, bodyText, setBodyText, preview, busy, send, current, onSiteRun } = props
   const set = (key, patch) => setValues({ ...values, [key]: { ...values[key], ...patch } })
   const hasBody = ep.bodyType || !['GET', 'HEAD'].includes(ep.method)
   const bodyFieldParams = ep.params.filter((p) => p.in === 'body')
@@ -438,7 +481,13 @@ function TestTab(props) {
         <button className="btn primary" onClick={send} disabled={busy}>
           {busy ? <span className="spin" /> : '▶ 호출'}
         </button>
+        <button className="btn" onClick={onSiteRun} title="CORS·출처 차단으로 막힐 때: 대상 사이트 탭에서 실행">
+          🌐 사이트에서 실행
+        </button>
       </div>
+      <p className="hint">
+        "▶ 호출"이 CORS·출처 차단으로 실패하면 <b>🌐 사이트에서 실행</b>을 쓰세요. 대상 사이트 탭에서 같은 요청을 보내고 결과를 가져옵니다.
+      </p>
 
       {current && (
         <>
@@ -556,7 +605,7 @@ function FragmentKV({ k, v }) {
   )
 }
 
-function SweepTab({ ep, values, runWith }) {
+function SweepTab({ ep, values, runWith, openSiteRun }) {
   const sweepable = ep.params.filter((p) => p.in !== 'header' || true)
   const [key, setKey] = useState(sweepable[0] ? `${sweepable[0].in}:${sweepable[0].name}` : '')
   const p = sweepable.find((x) => `${x.in}:${x.name}` === key)
@@ -572,17 +621,21 @@ function SweepTab({ ep, values, runWith }) {
 
   if (!sweepable.length) return <div className="muted">비교할 조건값(파라미터)이 없습니다. 테스트 탭에서 파라미터를 추가해 보세요.</div>
 
-  async function run() {
+  function buildCases() {
     const list = text.split('\n').map((x) => x.replace(/\r$/, ''))
     const uniq = Array.from(new Set(list)).slice(0, 30)
+    return [...(omit && p.in !== 'path' ? [{ omit: true }] : []), ...uniq.map((v) => ({ value: v }))].map((c) => ({
+      vals: { ...values, [key]: c.omit ? { ...(values[key] || {}), enabled: false } : { value: c.value, enabled: true } },
+      label: c.omit ? `${p.name} 제외` : `${p.name}=${c.value === '' ? '""' : c.value.length > 60 ? c.value.slice(0, 57) + '…' : c.value}`,
+    }))
+  }
+
+  async function run() {
     setRunning(true)
     setResults([])
     setViewing(null)
     const out = []
-    const cases = [...(omit ? [{ omit: true }] : []), ...uniq.map((v) => ({ value: v }))]
-    for (const c of cases) {
-      const vals = { ...values, [key]: c.omit ? { ...(values[key] || {}), enabled: false } : { value: c.value, enabled: true } }
-      const label = c.omit ? `${p.name} 제외` : `${p.name}=${c.value === '' ? '""' : c.value.length > 60 ? c.value.slice(0, 57) + '…' : c.value}`
+    for (const { vals, label } of buildCases()) {
       const r = await runWith(vals, label)
       out.push(r)
       setResults([...out])
@@ -616,6 +669,17 @@ function SweepTab({ ep, values, runWith }) {
       <div className="row" style={{ marginTop: 8 }}>
         <button className="btn primary" disabled={running || !p} onClick={run}>
           {running ? <span className="spin" /> : '▶ 조건 비교 실행'}
+        </button>
+        <button
+          className="btn"
+          disabled={running || !p}
+          title="CORS·출처 차단으로 막힐 때: 대상 사이트 탭에서 실행"
+          onClick={() => {
+            setViewing(null)
+            openSiteRun(buildCases(), (runs) => setResults(runs))
+          }}
+        >
+          🌐 사이트에서 실행
         </button>
         {running && <span className="small muted">{results.length}개 완료…</span>}
       </div>

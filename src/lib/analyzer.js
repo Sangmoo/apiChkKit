@@ -42,7 +42,8 @@ export async function analyzeUrl(inputUrl, settings, log = () => {}) {
       '이 사이트는 다른 출처(이 웹앱)에서 보내는 요청을 브라우저가 막도록 설정되어 있고, 공개 프록시도 응답하지 않았습니다. 대형 쇼핑몰·포털은 대부분 이렇습니다. GET/POST 같은 메서드 문제는 아닙니다.',
       'warn',
     )
-    log('👉 "🎯 캡처 스크립트" 탭을 사용하세요: 해당 사이트에서 콘솔에 스크립트를 실행하면 실제로 호출되는 API와 조건값·응답을 그대로 수집합니다. (또는 ⚙️ 설정에 개인 프록시 지정)', 'warn')
+    log('👉 "🎯 캡처 스크립트" 탭을 사용하세요: 해당 사이트에서 북마클릿이나 콘솔 스크립트를 실행하면 실제로 호출되는 API와 조건값·응답을 그대로 수집합니다. (또는 ⚙️ 설정에 개인 프록시 지정)', 'warn')
+    result.blocked = true
     return result
   }
   log(`응답 ${res.status} · ${res.contentType || '타입 미상'} · ${res.size.toLocaleString()} bytes · 경로: ${res.via === 'direct' ? '직접' : '프록시'}`, 'ok')

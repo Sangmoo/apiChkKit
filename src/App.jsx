@@ -37,6 +37,8 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(() => LS.get("ack.endpoints", [])[0]?.id || null)
   const [logs, setLogs] = useState([])
   const [busy, setBusy] = useState(false)
+  const [blocked, setBlocked] = useState(null) // 출처 차단으로 분석하지 못한 URL
+  const [tabRequest, setTabRequest] = useState(null)
   const [target, setTarget] = useState(() => LS.get('ack.target', ''))
   const [showSettings, setShowSettings] = useState(false)
   const [menu, setMenu] = useState(false)
@@ -86,12 +88,14 @@ export default function App() {
     setBusy(true)
     setLogs([])
     setTarget(url)
+    setBlocked(null)
     try {
       const res = await analyzeUrl(url, settings, log)
       // 확실 → 추정 → 약한 추정 순으로 정렬
       const rank = { high: 0, medium: 1, low: 2 }
       const sorted = [...res.endpoints].sort((a, b) => rank[a.confidence] - rank[b.confidence])
       if (sorted.length) addEndpoints(sorted, { replace: true })
+      else if (res.blocked) setBlocked(/^https?:\/\//i.test(url) ? url : 'https://' + url) // 기존 결과는 그대로 둔다
       else setEndpoints([])
     } catch (e) {
       log(`오류: ${e.message}`, 'error')
@@ -118,6 +122,7 @@ export default function App() {
         if (parsed.page) setTarget(parsed.page)
       }
       if (!eps.length) log('가져올 API 요청이 없습니다.', 'warn')
+      else setBlocked(null)
       addEndpoints(eps)
       if (eps.length) toast(`${eps.length}개 엔드포인트를 가져왔습니다`)
     } catch (e) {
@@ -239,7 +244,29 @@ export default function App() {
         </button>
       </header>
 
-      <InputPanel busy={busy} onAnalyzeUrl={onAnalyzeUrl} onImport={onImport} toast={toast} />
+      <InputPanel busy={busy} onAnalyzeUrl={onAnalyzeUrl} onImport={onImport} toast={toast} tabRequest={tabRequest} />
+
+      {blocked && !busy && (
+        <div className="card" style={{ marginTop: 12, borderColor: 'var(--warn)' }}>
+          <div className="card-b">
+            <b>🔒 이 사이트는 다른 출처에서의 요청을 막고 있어 URL 분석으로는 가져올 수 없습니다</b>
+            <p className="small" style={{ margin: '6px 0 10px' }}>
+              사이트가 일부러 막아 둔 것이라 이 앱이 대신 뚫을 수는 없습니다. 대신 <b>대상 사이트 탭 안에서</b> 동작을 기록하면 실제 API와 조건값·응답을 그대로 볼 수 있습니다. 수집한 뒤에는 테스트·조건 비교도 <b>🌐 사이트에서 실행</b>으로 같은 탭에서 돌릴 수 있습니다.
+            </p>
+            <div className="row wrap">
+              <button className="btn primary" onClick={() => setTabRequest({ tab: 'capture', n: Date.now() })}>
+                🎯 캡처 방법 보기
+              </button>
+              <a className="btn" href={blocked} target="_blank" rel="noreferrer">
+                ↗ 대상 페이지 열기
+              </a>
+              <button className="btn" onClick={() => setShowSettings(true)}>
+                ⚙️ 개인 프록시 설정
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {logs.length > 0 && (
         <div className="card" style={{ marginTop: 12 }}>
