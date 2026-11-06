@@ -198,6 +198,10 @@ export function observationsToEndpoints(observations, source) {
     })
     // query
     for (const [k, v] of u.searchParams) {
+      if (isCacheBuster(k, v)) {
+        mergeParam(ep.params, { name: k, in: 'query', type: 'integer', example: v, observed: [], description: '캐시 방지용 타임스탬프 — 결과에 영향 없음 (빼고 호출해도 됨)', cacheBuster: true })
+        continue
+      }
       mergeParam(ep.params, { name: k, in: 'query', type: guessType(v), example: v, observed: [v] })
     }
     // headers (의미있는 것만)
@@ -216,10 +220,17 @@ export function observationsToEndpoints(observations, source) {
         if (json.query && typeof json.query === 'string' && /graphql/i.test(u.pathname + ct + o.reqBody.slice(0, 50))) ep.bodyType = 'graphql'
         else ep.bodyType ||= 'json'
         ep.bodyExample ||= JSON.stringify(json, null, 2)
-        if (!Array.isArray(json)) {
-          for (const [k, v] of Object.entries(json)) {
-            mergeParam(ep.params, { name: k, in: 'body', type: guessType(v), example: v, observed: [typeof v === 'object' ? JSON.stringify(v).slice(0, 200) : v] })
-          }
+        // 객체 본문은 key 별로, 객체 배열 본문은 첫 원소의 key 를 "[].key" 로 표시
+        const fields = Array.isArray(json) ? (json[0] && typeof json[0] === 'object' && !Array.isArray(json[0]) ? Object.entries(json[0]).map(([k, v]) => [`[].${k}`, v]) : []) : Object.entries(json)
+        for (const [k, v] of fields) {
+          mergeParam(ep.params, {
+            name: k,
+            in: 'body',
+            type: guessType(v),
+            example: v,
+            observed: [typeof v === 'object' && v !== null ? JSON.stringify(v).slice(0, 200) : v],
+            ...(Array.isArray(json) ? { description: `배열 본문 각 원소의 필드 (관측 시 ${json.length}개 원소)` } : {}),
+          })
         }
       } else if (/x-www-form-urlencoded/.test(ct) || /^[\w.%[\]-]+=[^&]*(&[\w.%[\]-]+=[^&]*)*$/.test(o.reqBody.trim())) {
         ep.bodyType ||= 'form'
@@ -252,7 +263,7 @@ export function observationsToEndpoints(observations, source) {
     const n = ep.samples.length
     if (n > 1) {
       for (const p of ep.params) {
-        if (p.in !== 'query') continue
+        if (p.in !== 'query' || p.cacheBuster) continue
         const cnt = ep.samples.filter((s) => {
           try {
             return new URL(s.request.url).searchParams.has(p.name)
@@ -266,6 +277,11 @@ export function observationsToEndpoints(observations, source) {
     }
   }
   return [...groups.values()]
+}
+
+/** _=1793947543678 처럼 캐시를 피하려고 붙이는 타임스탬프 파라미터 */
+export function isCacheBuster(name, value) {
+  return /^(_|t|ts|_t|timestamp|cb|cachebust(er)?|nocache|rnd|rand)$/i.test(name) && /^\d{10,13}(\.\d+)?$/.test(String(value))
 }
 
 export function maskSecret(v) {

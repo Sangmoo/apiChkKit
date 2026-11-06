@@ -60,8 +60,18 @@ export function parseCapture(text) {
   if (data?.log?.entries) return parseHar(data)
   const list = Array.isArray(data) ? data : data?.entries
   if (!Array.isArray(list)) throw new Error('캡처 결과 형식이 아닙니다 (entries 배열 없음)')
+  // 스크립트 실행 전 요청(type:'resource')은 메서드·본문을 모르므로, 같은 경로가 실제로 캡처됐으면 버린다
+  const pathOf = (u) => {
+    try {
+      const x = new URL(u)
+      return x.origin + x.pathname
+    } catch {
+      return u
+    }
+  }
+  const captured = new Set(list.filter((x) => x && x.url && x.type !== 'resource').map((x) => pathOf(x.url)))
   const obs = list
-    .filter((x) => x && x.url)
+    .filter((x) => x && x.url && !(x.type === 'resource' && captured.has(pathOf(x.url))))
     .map((x) => ({
       method: x.method || 'GET',
       url: x.url,

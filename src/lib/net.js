@@ -73,6 +73,7 @@ export async function request({ url, method = 'GET', headers = {}, body = null }
 
   const attempts = []
   let lastError = ''
+  let proxyFailure = null // 공개 프록시가 돌려준 오류 응답 (다른 경로도 모두 실패하면 이것을 보여준다)
   for (const r of routes) {
     const t0 = performance.now()
     try {
@@ -81,15 +82,16 @@ export async function request({ url, method = 'GET', headers = {}, body = null }
       const res = await doFetch(r.url, { method, headers, body, timeoutMs })
       const text = await res.text()
       const time = Math.round(performance.now() - t0)
-      // 공개 프록시가 자체 오류 페이지를 돌려주는 경우 다음 경로로 넘어간다
-      if (r.via !== 'direct' && [403, 429, 500, 502, 503, 520, 521, 522].includes(res.status) && isProxyError(text)) {
+      const resHeaders = headersToObject(res.headers)
+      // 공개 프록시가 자체 오류(4xx/5xx)를 돌려주는 경우: 대상 서버의 응답인지 확실하지 않으므로 다음 경로를 먼저 시도한다
+      if (isPublic && res.status >= 400 && isProxyError(text, res.status)) {
         attempts.push(`${shortVia(r.via)}: 프록시 오류 ${res.status}`)
         if (res.status === 429 || res.status === 403) deadUntil.set(r.via, Date.now() + DEAD_MS)
-        lastError = `프록시 오류 ${res.status}`
+        lastError = `프록시(${shortVia(r.via)})가 ${res.status} 오류를 반환`
+        proxyFailure ||= { res, text, time, resHeaders, via: r.via }
         continue
       }
       attempts.push(`${shortVia(r.via)}: ${res.status}`)
-      const resHeaders = headersToObject(res.headers)
       return {
         ok: res.ok,
         status: res.status,
@@ -111,6 +113,25 @@ export async function request({ url, method = 'GET', headers = {}, body = null }
       if (r.via !== 'direct') deadUntil.set(r.via, Date.now() + DEAD_MS)
     }
   }
+  if (proxyFailure) {
+    const { res, text, time, resHeaders, via } = proxyFailure
+    return {
+      ok: false,
+      status: res.status,
+      statusText: res.statusText,
+      headers: resHeaders,
+      text,
+      json: safeJson(text),
+      contentType: resHeaders['content-type'] || '',
+      time,
+      size: new Blob([text]).size,
+      via,
+      finalUrl: url,
+      error: `${lastError}. 대상 서버가 아니라 공개 프록시의 응답일 수 있습니다`,
+      proxyError: true,
+      attempts,
+    }
+  }
   return {
     ok: false,
     status: 0,
@@ -128,9 +149,11 @@ export async function request({ url, method = 'GET', headers = {}, body = null }
   }
 }
 
-function isProxyError(text) {
-  const t = (text || '').slice(0, 600).toLowerCase()
-  return /rate limit|too many requests|proxy|cloudflare|error while processing|forbidden|keyless|cors/.test(t)
+function isProxyError(text, status) {
+  const t = (text || '').slice(0, 800).toLowerCase()
+  if (/rate limit|too many requests|proxy|cloudflare|error while processing|forbidden|keyless|cors|quest|invalid url|blocked/.test(t)) return true
+  // 프록시 자체의 짧은 오류 문구 (예: {"Error":"..."}) 또는 빈 본문
+  return status >= 400 && (t.trim().length === 0 || /^\{\s*"error"\s*:/.test(t.trim()))
 }
 
 export function shortVia(via) {

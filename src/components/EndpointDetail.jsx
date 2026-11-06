@@ -34,7 +34,7 @@ function stripRun(run) {
 function labelOf(ep, values, customParams) {
   const parts = []
   for (const p of ep.params) {
-    if (p.in === 'header') continue
+    if (p.in === 'header' || p.cacheBuster) continue
     const st = values[`${p.in}:${p.name}`]
     if (st?.enabled) parts.push(`${p.name}=${st.value === '' ? '""' : st.value}`)
   }

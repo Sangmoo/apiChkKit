@@ -105,3 +105,38 @@ test('스키마 병합 / JSONP', () => {
   assert.deepEqual(s.required, ['a'])
   assert.deepEqual(safeJson('cb({"x":1});'), { x: 1 })
 })
+
+test('번들 속 API 전용 호스트로 상대 경로 해석 (11번가 형태)', async () => {
+  const { findApiHost } = await import('../src/lib/jsScanner.js')
+  const code = `var tn="apis.11st.co.kr",x="//c.011st.com/a.css";
+    u()(this,"URL","/".concat("search","/api/tab"));
+    h.A.get("/search/api/tab-filter?kwd=" + k);
+    v.post("/search/api/max-discount", { productNo, sellPrice });`
+  const host = findApiHost(code, 'https://search.11st.co.kr/pc/total-search?kwd=a')
+  assert.equal(host, 'apis.11st.co.kr')
+  const eps = scanCode(code, 'https://search.11st.co.kr/pc/total-search', 'app.js', { apiHost: host })
+  const keys = eps.map((e) => `${e.method} ${e.url}`)
+  assert.ok(keys.includes('GET https://apis.11st.co.kr/search/api/tab-filter'), keys.join('\n'))
+  assert.ok(keys.includes('POST https://apis.11st.co.kr/search/api/max-discount'), keys.join('\n'))
+})
+
+test('캡처: 캐시 방지 파라미터, 배열 본문, resource 중복 제거', async () => {
+  const { parseCapture } = await import('../src/lib/importers.js')
+  const cap = { apiChkKitCapture: 1, entries: [
+    { type: 'resource', method: 'GET', url: 'https://apis.x.co.kr/search/api/max-discount', status: 200 },
+    { type: 'xhr', method: 'GET', url: 'https://apis.x.co.kr/search/api/tab?kwd=A&sortCd=L&_=1793947543678', status: 200, contentType: 'application/json', responseBody: '{"curPage":1,"data":[]}' },
+    { type: 'xhr', method: 'GET', url: 'https://apis.x.co.kr/search/api/tab?kwd=B&_=1793947543999', status: 200, contentType: 'application/json', responseBody: '{"curPage":1,"data":[]}' },
+    { type: 'xhr', method: 'POST', url: 'https://apis.x.co.kr/search/api/max-discount', requestBody: '[{"productNo":1,"sellPrice":2}]', status: 200, contentType: 'application/json', responseBody: '[]' },
+  ] }
+  const { observations } = parseCapture(JSON.stringify(cap))
+  assert.equal(observations.length, 3)
+  const eps = observationsToEndpoints(observations, 'capture')
+  const tab = eps.find((e) => e.url.endsWith('/tab'))
+  const bust = tab.params.find((p) => p.name === '_')
+  assert.ok(bust.cacheBuster && !bust.required)
+  assert.equal(tab.params.find((p) => p.name === 'kwd').required, true)
+  assert.equal(tab.params.find((p) => p.name === 'sortCd').required, false)
+  const md = eps.find((e) => e.url.endsWith('/max-discount'))
+  assert.equal(md.method, 'POST')
+  assert.ok(md.params.find((p) => p.name === '[].productNo' && p.in === 'body'))
+})

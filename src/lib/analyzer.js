@@ -2,7 +2,7 @@
 import { request, pMap } from './net.js'
 import { newEndpoint, mergeEndpoints, observationsToEndpoints, NOISE_HOSTS } from './endpoint.js'
 import { parseSpecText, specToEndpoints } from './openapi.js'
-import { scanCode, scanForms, findChunkUrls } from './jsScanner.js'
+import { scanCode, scanForms, findChunkUrls, findApiHost } from './jsScanner.js'
 
 export const SPEC_PATHS = [
   '/openapi.json',
@@ -36,9 +36,13 @@ export async function analyzeUrl(inputUrl, settings, log = () => {}) {
 
   log(`요청: ${url}`)
   const res = await request({ url }, settings)
-  if (res.status === 0) {
+  if (res.status === 0 || res.proxyError) {
     log(`페이지를 가져오지 못했습니다 (${res.attempts.join(' / ')})`, 'error')
-    log('CORS 프록시 설정을 확인하거나, HAR 업로드 / 캡처 스크립트 방식을 사용하세요.', 'warn')
+    log(
+      '이 사이트는 다른 출처(이 웹앱)에서 보내는 요청을 브라우저가 막도록 설정되어 있고, 공개 프록시도 응답하지 않았습니다. 대형 쇼핑몰·포털은 대부분 이렇습니다. GET/POST 같은 메서드 문제는 아닙니다.',
+      'warn',
+    )
+    log('👉 "🎯 캡처 스크립트" 탭을 사용하세요: 해당 사이트에서 콘솔에 스크립트를 실행하면 실제로 호출되는 API와 조건값·응답을 그대로 수집합니다. (또는 ⚙️ 설정에 개인 프록시 지정)', 'warn')
     return result
   }
   log(`응답 ${res.status} · ${res.contentType || '타입 미상'} · ${res.size.toLocaleString()} bytes · 경로: ${res.via === 'direct' ? '직접' : '프록시'}`, 'ok')
@@ -145,9 +149,8 @@ export async function analyzeUrl(inputUrl, settings, log = () => {}) {
 
   // 인라인 스크립트
   const inline = [...doc.querySelectorAll('script:not([src])')].map((s) => s.textContent).join('\n;\n')
-  const inlineEps = scanCode(inline + '\n' + extractHtmlAttrs(doc), baseUrl, 'inline')
-  if (inlineEps.length) log(`인라인 스크립트/속성에서 ${inlineEps.length}개 후보`, 'ok')
-  add(inlineEps)
+  // 소스를 모두 모은 뒤, API 전용 호스트를 찾고 나서 스캔한다
+  const sources = [{ name: 'inline', code: inline + '\n' + extractHtmlAttrs(doc) }]
 
   // 외부 스크립트
   if (settings.scanExternalScripts) {
@@ -182,16 +185,25 @@ export async function analyzeUrl(inputUrl, settings, log = () => {}) {
           return
         }
         const code = r.text.slice(0, MAX_SCRIPT_BYTES)
-        const eps = scanCode(code, baseUrl, name)
-        result.scripts.push({ url: batch[i], ok: true, size: r.size, found: eps.length })
-        add(eps)
+        const entry = { url: batch[i], ok: true, size: r.size, found: 0 }
+        result.scripts.push(entry)
+        sources.push({ name, code, entry })
         if (round === 0) for (const c of findChunkUrls(code, batch[i])) if (!visited.has(c) && new URL(c).origin === new URL(batch[i]).origin) next.push(c)
       })
       queue.push(...new Set(next))
       round++
     }
     const okCount = result.scripts.filter((s) => s.ok).length
-    log(`스크립트 ${okCount}/${result.scripts.length}개 분석 완료`, okCount ? 'ok' : 'warn')
+    log(`스크립트 ${okCount}/${result.scripts.length}개 내려받음`, okCount ? 'ok' : 'warn')
+  }
+
+  const apiHost = findApiHost(sources.map((x) => x.code).join('\n'), finalUrl)
+  if (apiHost) log(`번들에서 API 전용 호스트 발견: ${apiHost} → 상대 경로 API를 이 호스트 기준으로 해석합니다`, 'ok')
+  for (const src of sources) {
+    const eps = scanCode(src.code, baseUrl, src.name, { apiHost })
+    if (src.entry) src.entry.found = eps.length
+    else if (eps.length) log(`인라인 스크립트/속성에서 ${eps.length}개 후보`, 'ok')
+    add(eps)
   }
 
   // 스펙 문서 탐색

@@ -119,6 +119,7 @@ export function initialValues(ep) {
     let v = p.example ?? p.observed?.[0] ?? (p.enum?.length ? p.enum[0] : '')
     if (v && typeof v === 'object') v = JSON.stringify(v)
     if (v === null) v = ''
+    if (p.cacheBuster) v = Date.now()
     vals[`${p.in}:${p.name}`] = { value: String(v), enabled: p.required || p.in === 'path' || p.in === 'variable' || v !== '' }
   }
   return vals
